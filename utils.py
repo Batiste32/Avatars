@@ -315,31 +315,22 @@ import os
 from PyQt6.QtWidgets import QApplication, QWidget, QLabel, QVBoxLayout, QHBoxLayout, QLineEdit, QTextBrowser, QSizeGrip, QSlider, QPushButton, QFileDialog
 from PyQt6.QtGui import QPixmap, QPainter, QColor, QShortcut, QKeySequence, QTextCursor
 from PyQt6.QtCore import Qt, QPoint, QTimer, QThread, pyqtSignal
+import json
 
+CONFIG_FILE = "config.json"
 CHARACTER_FOLDER = "characters"  # Root character directory
 
 class ChatOverlay(QWidget):
-    def __init__(self, character_name="Barry"):
+    def __init__(self, requested_name=None):
         super().__init__()
         self.timer = 60000
         self.setWindowTitle("My Assistant")  # Custom window title
-
-        # Load character assets
-        self.character_name = character_name
-        self.character_path = os.path.join(CHARACTER_FOLDER, self.character_name)
-        self.character_image = os.path.join(self.character_path, "character.png")
-        self.character_context = os.path.join(self.character_path, "context.txt")
-        self.context_text = self.load_character_context()
 
         # Window settings
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setMinimumSize(200, 300)  # Set minimum size for resizing
         self.resize(300, 400)  # Default size
-
-        # Load character image
-        self.character_label = QLabel(self)
-        self.load_character_image()
 
         # AI response label (click to view previous messages)
         self.response_label = QTextBrowser(self)
@@ -413,19 +404,6 @@ class ChatOverlay(QWidget):
         self.toggle_button = QPushButton("Show Parameters", self)
         self.toggle_button.clicked.connect(self.toggle_parameters)
 
-        # Chat Layout
-        self.chat_layout.addWidget(self.character_label, alignment=Qt.AlignmentFlag.AlignCenter)
-        self.chat_layout.addWidget(self.response_label)
-        self.chat_layout.addWidget(self.input_field)
-        #layout.addWidget(self.message_history)
-        self.chat_layout.addWidget(self.size_grip, alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)  # Resize grip
-        self.chat_layout.addWidget(self.toggle_button)
-        # Add chat layout (left) and parameters (right) to main layout
-        self.main_layout.addLayout(self.chat_layout)  
-        self.main_layout.addWidget(self.parameters_widget)  # Parameters on the right
-
-        self.setLayout(self.main_layout)
-
         # Dragging functionality
         self.old_pos = None
 
@@ -441,8 +419,64 @@ class ChatOverlay(QWidget):
         self.auto_ai_timer.timeout.connect(self.auto_trigger_ai)
         self.auto_ai_timer.start(self.timer)
 
+        # Load saved settings
+        self.load_config() # Includes the character name
+        if requested_name :
+            self.character_name = requested_name
+            self.save_config()
+
+        # Load character assets
+        self.character_path = os.path.join(CHARACTER_FOLDER, self.character_name)
+        self.character_image = os.path.join(self.character_path, "character.png")
+        self.character_context = os.path.join(self.character_path, "context.txt")
+        self.context_text = self.load_character_context()
+        # Load character image
+        self.character_label = QLabel(self)
+        self.load_character_image()
+
+        # Connect sliders to auto-save
+        self.font_slider.valueChanged.connect(self.save_config)
+        self.timer_slider.valueChanged.connect(self.save_config)
+
+        # Chat Layout
+        self.chat_layout.addWidget(self.character_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.chat_layout.addWidget(self.response_label)
+        self.chat_layout.addWidget(self.input_field)
+        #layout.addWidget(self.message_history)
+        self.chat_layout.addWidget(self.size_grip, alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)  # Resize grip
+        self.chat_layout.addWidget(self.toggle_button)
+        # Add chat layout (left) and parameters (right) to main layout
+        self.main_layout.addLayout(self.chat_layout)  
+        self.main_layout.addWidget(self.parameters_widget)  # Parameters on the right
+
+        self.setLayout(self.main_layout)
+
         # Ollama worker
         self.worker = OllamaWorker("llava",self)
+
+    def load_config(self):
+        """Loads the saved parameters from a config file."""
+        if os.path.exists(CONFIG_FILE):
+            with open(CONFIG_FILE, "r", encoding="utf-8") as file:
+                config = json.load(file)
+
+            # Apply settings
+            self.character_name = config.get("character_name", "Barry")  # Default to "Barry"
+            self.font_slider.setValue(config.get("font_size", 12))  # Default 12px
+            self.timer_slider.setValue(config.get("auto_timer", 5))  # Default 5 min
+        else:
+            self.save_config()  # Create config file if not found
+
+    def save_config(self):
+        """Saves the current parameters to a config file."""
+        config = {
+            "character_name": self.character_name,
+            "font_size": self.font_slider.value(),
+            "auto_timer": self.timer_slider.value(),
+        }
+
+        with open(CONFIG_FILE, "w", encoding="utf-8") as file:
+            json.dump(config, file, indent=4)
 
     def load_character(self):
         """Opens a file dialog to select a character folder and updates the character."""
@@ -460,6 +494,8 @@ class ChatOverlay(QWidget):
 
             # Load new character context
             self.context_text = self.load_character_context()
+            
+            self.save_config()  # Save new character selection
 
             # Update UI
             text = f"<b><span style='color:DarkOrchid;'>Loaded character: </span></b> <span style='color:white;'>{self.character_name}"
@@ -477,6 +513,7 @@ class ChatOverlay(QWidget):
         self.character_label.setPixmap(pixmap)
         self.character_label.setScaledContents(True)
         self.character_label.setFixedSize(200, 300)  # Adjust character size
+        self.character_label.lower() # Move to background
 
     def load_character_context(self):
         """Loads the character's context from the text file."""

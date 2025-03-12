@@ -32,7 +32,9 @@ CHARACTER_FOLDER = "characters"  # Root character directory
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    overlay = utils.ChatOverlay("Barry")
+    # Read the character name from command-line arguments
+    character_name = sys.argv[1] if len(sys.argv) > 1 else None
+    overlay = utils.ChatOverlay(character_name)
     overlay.show()
     sys.exit(app.exec())
 
