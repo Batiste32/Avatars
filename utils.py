@@ -265,7 +265,6 @@ def call_ollama(model_name, input_text="", context=None, image=None, debug=True)
 
     # Call Ollama with or without image
     response = ollama.chat(model=model_name, messages=messages, stream=True, options={
-        "num_predict": 64,       # ↓ Lower max tokens
         "temperature": 0.5,      # ↓ Less randomness
         "top_k": 20,             # ↓ Restrict choices
         "top_p": 0.8,            # Optional: more focused outputs
@@ -739,7 +738,7 @@ class OllamaWorker(QThread):
 
         self.context.append({"role": "user", "content": self.chat_handler.user_text + "Please be concise, answer in maximum 3 sentences."})
         self.context.append({"role": "assistant", "content": self.ai_response})
-        if len(context) > MAX_CONTEXT_LENGTH:
-            context = context[:1] + context[-(MAX_CONTEXT_LENGTH - 1):]  # Keep system + last N messages
+        if len(self.context) > MAX_CONTEXT_LENGTH:
+            self.context = self.context[:1] + self.context[-(MAX_CONTEXT_LENGTH - 1):]  # Keep system + last N messages
         self.finished.emit()  # Notify when done
         self.available = True
