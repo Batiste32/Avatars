@@ -264,7 +264,13 @@ def call_ollama(model_name, input_text="", context=None, image=None, debug=True)
     messages.append({"role": "user", "content": input_text, "images" : [image_bytes] if image_bytes else None})
 
     # Call Ollama with or without image
-    response = ollama.chat(model=model_name, messages=messages, stream=True, options={"temperature": 0.7, "top_k": 30}) #"num_predict": 128, 
+    response = ollama.chat(model=model_name, messages=messages, stream=True, options={
+        "num_predict": 64,       # ↓ Lower max tokens
+        "temperature": 0.5,      # ↓ Less randomness
+        "top_k": 20,             # ↓ Restrict choices
+        "top_p": 0.8,            # Optional: more focused outputs
+        "stop": ["\n\n"]         # Stop early after a sentence
+        })
 
     for chunk in response:
         if "message" in chunk and "content" in chunk["message"]:
@@ -319,6 +325,7 @@ import json
 
 CONFIG_FILE = "config.json"
 CHARACTER_FOLDER = "characters"  # Root character directory
+MAX_CONTEXT_LENGTH = 5  # Number of past exchanges to keep
 
 class ChatOverlay(QWidget):
     def __init__(self, requested_name=None):
@@ -732,5 +739,7 @@ class OllamaWorker(QThread):
 
         self.context.append({"role": "user", "content": self.chat_handler.user_text + "Please be concise, answer in maximum 3 sentences."})
         self.context.append({"role": "assistant", "content": self.ai_response})
+        if len(context) > MAX_CONTEXT_LENGTH:
+            context = context[:1] + context[-(MAX_CONTEXT_LENGTH - 1):]  # Keep system + last N messages
         self.finished.emit()  # Notify when done
         self.available = True
