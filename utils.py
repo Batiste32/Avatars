@@ -691,7 +691,7 @@ class OllamaWorker(QThread):
         self.chat_handler = chat_handler
         self.model_name = model_name
         self.context = [{"role" : "system", "content": chat_handler.context_text}]
-        self.context.append({"role": "system", "content": "React to what the user is doing on their computer (Maximum 3 short sentences). Talk in the first person. Stay concise."})  # Base prompt
+        self.context.append({"role": "system", "content": "React in maximum 3 short sentences. Talk in the first person.<"})  # Base prompt
         self.ai_response = ""  # Store AI response for context update
         self.last_valid_window = "No window opened"
 
