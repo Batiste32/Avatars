@@ -345,7 +345,6 @@ class ChatOverlay(QWidget):
         self.response_label.setOpenExternalLinks(True)  # Allows clickable links in AI responses
         self.response_label.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)  # Always show scrollbar
         self.response_label.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # No horizontal scrolling
-        self.response_label.mousePressEvent = self.show_message_history  # Click to show history
 
         # User input field
         self.input_field = QLineEdit(self)
@@ -353,12 +352,6 @@ class ChatOverlay(QWidget):
         self.input_field.setPlaceholderText("Type a message...")
         self.input_field.returnPressed.connect(self.send_message)
 
-        """
-        # Message history viewer (hidden by default)
-        self.message_history = QTextBrowser(self)
-        self.message_history.setStyleSheet("color: white; background-color: rgba(0, 0, 0, 250); padding: 5px; border-radius: 5px;")
-        self.message_history.setVisible(False)
-        """
         # Resize handle (allows resizing)
         self.size_grip = QSizeGrip(self)
 
@@ -448,7 +441,6 @@ class ChatOverlay(QWidget):
         self.chat_layout.addWidget(self.character_label, alignment=Qt.AlignmentFlag.AlignCenter)
         self.chat_layout.addWidget(self.response_label)
         self.chat_layout.addWidget(self.input_field)
-        #layout.addWidget(self.message_history)
         self.chat_layout.addWidget(self.size_grip, alignment=Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignRight)  # Resize grip
         self.chat_layout.addWidget(self.toggle_button)
         # Add chat layout (left) and parameters (right) to main layout
@@ -535,30 +527,17 @@ class ChatOverlay(QWidget):
         x = screen_geometry.left() + 30  # 10px padding from the left
         y = screen_geometry.bottom() - self.height() - 30  # 10px padding above the taskbar
         self.move(x, y)
-
-    def old_send_message(self):
-        """Handles user input and updates AI response."""
-        user_text = self.input_field.text().strip()
-        if user_text:
-            self.input_field.clear()
-            self.update_response(f"You: {user_text}\nAI: Thinking...")  # Placeholder before AI response
-
-            response = call_ollama("llava:7b", input_text=user_text ,context=self.context_text)
-            ai_response = "AI: " + response  # Example: Reverse text as AI response
-            self.update_response(ai_response)
     
     def send_message(self):
         """Handles user input and starts the Ollama response stream."""
         self.user_text = self.input_field.text().strip()
         if not self.user_text:
             return
-        self.input_image = None #TODO
         self.input_image = capture_active_window()
 
         self.input_field.clear()
         text = f"<b><span style='color:lightblue;'>You:</span></b> <span style='color:white;'>{self.user_text}</span><br>" \
             f"<b><span style='color:lightgreen;'>{self.character_name}:</span></b> <span style='color:white;'></span>"
-        #self.message_history.append(f"You: {self.user_text}")  # Store user message
         self.response_label.setText(text)  # Show user message
 
         # Reset the automatic AI call timer
@@ -587,16 +566,10 @@ class ChatOverlay(QWidget):
     def finalize_response(self):
         """Handles any final adjustments when streaming is done."""
         self.auto_ai_timer.start(self.timer)  # Restart 5-minute countdown
-        #self.message_history.append(self.response_label.text())  # Store final response
 
     def update_response(self, response):
-        """Updates the response label and stores history."""
-        self.message_history.append(response)  # Store in history
+        """Updates the response label."""
         self.response_label.setText(response)
-
-    def show_message_history(self, event):
-        """Toggles visibility of message history."""
-        #self.message_history.setVisible(not self.message_history.isVisible())
 
     def mousePressEvent(self, event):
         """Allows dragging the overlay."""
@@ -636,9 +609,6 @@ class ChatOverlay(QWidget):
         if self.worker.available :
             self.user_text = "Ask me something or make a comment."  # Placeholder text
             self.input_image = capture_active_window()
-
-            #self.response_label.setText(f"<b><span style='color:lightblue;'>Auto:</span></b> <span style='color:white;'>Analyzing...</span>")  # Placeholder
-            #self.message_history.append(f"Auto: Analyzing...")
 
             # Disconnect previous connections to avoid duplicate messages
             try:
@@ -691,7 +661,7 @@ class OllamaWorker(QThread):
         self.chat_handler = chat_handler
         self.model_name = model_name
         self.context = [{"role" : "system", "content": chat_handler.context_text}]
-        self.context.append({"role": "system", "content": "React in maximum 3 short sentences. Talk in the first person.<"})  # Base prompt
+        self.context.append({"role": "system", "content": "React in maximum 3 short sentences. Talk in the first person."})  # Base prompt
         self.ai_response = ""  # Store AI response for context update
         self.last_valid_window = "No window opened"
 
@@ -718,17 +688,18 @@ class OllamaWorker(QThread):
         self.last_valid_window = self.get_real_active_window()
         #print(f"Updated active window: {self.last_valid_window}")  # Debugging
 
-    def run(self):
+    def run(self, debug=False):
         """Runs the Ollama chat function in a separate thread and emits text chunks."""
         self.available = False
-        screenshot = capture_active_window()
+        screenshot = capture_active_window(True,debug=debug)
         window_title = "The active window is named : " + self.last_valid_window
-        print(window_title)
+        if debug :
+            print("Window Title : " + window_title)
         self.context.append({"role":"system", "content":window_title})
         self.ai_response = ""  # Reset AI response
         for chunk in call_ollama(
             model_name=self.model_name,
-            input_text=self.chat_handler.user_text,
+            input_text=self.chat_handler.user_text + "\nPlease be concise, answer in maximum 3 sentences.",
             context=self.context,
             image=screenshot,
         ):
@@ -736,9 +707,11 @@ class OllamaWorker(QThread):
             self.new_text.emit(chunk)  # Send text to UI immediately
             self.ai_response += chunk
 
-        self.context.append({"role": "user", "content": self.chat_handler.user_text + "Please be concise, answer in maximum 3 sentences."})
+        self.context.append({"role": "user", "content": self.chat_handler.user_text})
         self.context.append({"role": "assistant", "content": self.ai_response})
         if len(self.context) > MAX_CONTEXT_LENGTH:
             self.context = self.context[:1] + self.context[-(MAX_CONTEXT_LENGTH - 1):]  # Keep system + last N messages
+        if debug :
+            print("Context : ", self.context)
         self.finished.emit()  # Notify when done
         self.available = True
